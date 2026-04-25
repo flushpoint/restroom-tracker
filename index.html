@@ -224,6 +224,7 @@
       </select>
     </div>
     <div class="cards-list" id="cards-list"></div>
+    <div id="debug-panel" style="display:none;margin:0 1.25rem 1rem;padding:10px 12px;background:#fef9c3;border:1px solid #fde68a;border-radius:8px;font-size:12px;line-height:1.7;color:#713f12;"></div>
     <div class="sidebar-footer">
       <span id="footer-user">Not signed in</span>
       <div class="footer-links">
@@ -405,11 +406,29 @@ function initFirebase() {
     });
     db.ref('locations').on('value',snap=>{
       locations=[];
-      snap.forEach(child=>locations.push({id:child.key,...child.val()}));
-      renderAll();
+      snap.forEach(child=>{
+        const val=child.val();
+        if(val.tags&&!Array.isArray(val.tags)) val.tags=Object.values(val.tags);
+        locations.push({id:child.key,...val});
+      });
+      // DEBUG — show visible panel with what came back from Firebase
+      const debugEl = document.getElementById('debug-panel');
+      if(debugEl) {
+        debugEl.style.display='block';
+        debugEl.innerHTML = `<strong>Firebase returned ${locations.length} locations</strong><br/>` +
+          (locations.length > 0 ? locations.map(l=>`• ${l.name||'unnamed'} (${l.type||'no type'})`).join('<br/>') : 'No locations found');
+      }
+      try { renderAll(); } catch(e) {
+        console.error('Render error:',e);
+        if(debugEl) debugEl.innerHTML += `<br/><span style="color:red">Render error: ${e.message}</span>`;
+      }
       const c=locations.length;
       const el=document.getElementById('location-count');
       if(el) el.textContent=`${c} shared location${c!==1?'s':''} · live`;
+    }, err=>{
+      showToast('❌ Database error: '+err.message, 5000);
+      const debugEl = document.getElementById('debug-panel');
+      if(debugEl) { debugEl.style.display='block'; debugEl.innerHTML=`<span style="color:red">DB Error: ${err.message}</span>`; }
     });
   } catch(e) {
     console.error('Firebase error:',e);
@@ -420,15 +439,25 @@ function initFirebase() {
 
 // ---- Firebase data ops ----
 async function addLocation(data) {
-  if(!db)return;
-  const ref=db.ref('locations').push();
-  await ref.set({...data,id:ref.key,createdBy:currentUser,createdAt:Date.now(),updatedAt:Date.now()});
-  showToast('📍 Location added for everyone!');
+  if(!db){showToast('❌ No database connection',4000);return;}
+  try {
+    const ref=db.ref('locations').push();
+    await ref.set({...data,id:ref.key,createdBy:currentUser,createdAt:Date.now(),updatedAt:Date.now()});
+    showToast('📍 Location added for everyone!');
+  } catch(e) {
+    showToast('❌ Save failed: '+e.message, 6000);
+    alert('Save failed: '+e.message);
+  }
 }
 async function updateLocation(id,data) {
-  if(!db)return;
-  await db.ref('locations/'+id).update({...data,updatedAt:Date.now()});
-  showToast('✅ Updated!');
+  if(!db){showToast('❌ No database connection',4000);return;}
+  try {
+    await db.ref('locations/'+id).update({...data,updatedAt:Date.now()});
+    showToast('✅ Updated!');
+  } catch(e) {
+    showToast('❌ Update failed: '+e.message, 6000);
+    alert('Update failed: '+e.message);
+  }
 }
 async function deleteLocation(id) {
   if(!db)return;
@@ -541,8 +570,9 @@ function renderCards() {
   const el=document.getElementById('cards-list');
   if(!filtered.length){el.innerHTML=`<div class="empty">No locations yet.<br/>Tap <strong>+ Add</strong> to be the first!<br/><span style="font-size:12px;">Locations are shared with your group in real time.</span></div>`;return;}
   el.innerHTML=filtered.map(loc=>{
+    try {
     const canEdit=isAdmin||loc.createdBy===currentUser;
-    const tags=loc.tags||[];
+    const tags=Array.isArray(loc.tags)?loc.tags:[];
     const statusClass = loc.status==='open'?'status-open':loc.status==='closed'?'status-closed':'status-unknown';
     const statusLabel = loc.status==='open'?'✅ Open':loc.status==='closed'?'🔴 Closed':'❓ Unknown';
     const hasPin = loc.lat&&loc.lat!==0&&loc.lng&&loc.lng!==0;
@@ -550,9 +580,9 @@ function renderCards() {
     return `<div class="card ${highlightedId===loc.id?'highlighted':''}" id="card-${loc.id}" onclick="focusLocation('${loc.id}')">
       <div class="card-top">
         <div style="flex:1;min-width:0;">
-          <div class="card-name">${esc(loc.name)}</div>
+          <div class="card-name">${esc(loc.name||'')}</div>
           ${loc.address?`<div class="card-address">${esc(loc.address)}</div>`:''}
-          ${hasPin?`<div class="card-coords">📍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>`:`<div class="card-coords" style="color:#d97706;">⚠ No pin</div>`}
+          ${hasPin?`<div class="card-coords">📍 ${Number(loc.lat).toFixed(4)}, ${Number(loc.lng).toFixed(4)}</div>`:`<div class="card-coords" style="color:#d97706;">⚠ No pin</div>`}
           <span class="status-badge ${statusClass}">${statusLabel}</span>
           ${tags.length?`<div class="tags-wrap">${tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>`:''}
           ${loc.notes?`<div class="card-notes">"${esc(loc.notes)}"</div>`:''}
@@ -563,7 +593,7 @@ function renderCards() {
       <div class="card-bottom">
         <div>
           <div class="stars">
-            ${[1,2,3,4,5].map(n=>`<button class="star" onclick="event.stopPropagation();quickRate('${loc.id}',${n})">${n<=loc.rating?'★':'☆'}</button>`).join('')}
+            ${[1,2,3,4,5].map(n=>`<button class="star" onclick="event.stopPropagation();quickRate('${loc.id}',${n})">${n<=(loc.rating||0)?'★':'☆'}</button>`).join('')}
             <span class="rating-label">${loc.rating>0?RATINGS[loc.rating]:'Not rated'}</span>
           </div>
           <div class="last-updated">Updated ${fmtDate(loc.updatedAt)}</div>
@@ -575,6 +605,7 @@ function renderCards() {
         </div>
       </div>
     </div>`;
+    } catch(e) { return `<div class="card"><div class="card-name" style="color:red;">⚠ Error rendering: ${esc(loc.name||loc.id)}</div></div>`; }
   }).join('');
 }
 
