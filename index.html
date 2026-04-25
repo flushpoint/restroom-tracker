@@ -86,6 +86,23 @@
   .last-updated { font-size: 10px; color: var(--text3); margin-top: 4px; }
   .empty { text-align: center; padding: 3rem 1rem; color: var(--text3); font-size: 14px; line-height: 1.7; }
 
+  /* Status badge */
+  .status-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 12px; margin-top: 4px; }
+  .status-open { background: #d1fae5; color: #065f46; }
+  .status-closed { background: #fee2e2; color: #991b1b; }
+  .status-unknown { background: #f3f4f6; color: #6b7280; }
+
+  /* Tags */
+  .tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .tag { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #eff6ff; color: #1d4ed8; font-weight: 500; border: 0.5px solid #bfdbfe; }
+  .tag-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .tag-check { display: flex; align-items: center; gap: 5px; font-size: 13px; cursor: pointer; }
+  .tag-check input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--green); }
+
+  /* Directions button */
+  .directions-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 4px 10px; border-radius: var(--radius); border: 0.5px solid #bfdbfe; background: #eff6ff; color: #1d4ed8; cursor: pointer; font-weight: 600; text-decoration: none; transition: all 0.15s; }
+  .directions-btn:hover { background: #dbeafe; }
+
   /* Map */
   .map-panel { position: relative; }
   #map { width: 100%; height: 100vh; position: sticky; top: 0; }
@@ -488,11 +505,14 @@ function makePopup(loc) {
     ${loc.rating>0?`<span style="color:#f5a623;">${'★'.repeat(loc.rating)}${'☆'.repeat(5-loc.rating)}</span> <span style="font-size:12px;">${RATINGS[loc.rating]}</span><br/>`:''}
     ${loc.address?`<span style="font-size:12px;color:#555;">${esc(loc.address)}</span><br/>`:''}
     ${loc.notes?`<em style="font-size:12px;color:#888;">${esc(loc.notes)}</em><br/>`:''}
+    ${loc.status&&loc.status!=='unknown'?`<span style="font-size:12px;font-weight:600;color:${loc.status==='open'?'#065f46':'#991b1b'}">${loc.status==='open'?'✅ Open':'🔴 Closed'}</span><br/>`:''}
+    ${loc.tags&&loc.tags.length?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin:4px 0;">${loc.tags.map(t=>`<span style="font-size:10px;padding:2px 6px;border-radius:8px;background:#eff6ff;color:#1d4ed8;border:0.5px solid #bfdbfe;">${esc(t)}</span>`).join('')}</div>`:''}
     <span style="font-size:11px;color:#aaa;">Added by ${esc(loc.createdBy||'unknown')}</span>
-    ${canEdit?`<div style="margin-top:8px;display:flex;gap:6px;">
+    ${canEdit?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+      ${loc.lat&&loc.lng?`<a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;text-decoration:none;font-weight:600;">🧭 Directions</a>`:''}
       <button onclick="openEditById('${loc.id}')" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;">Edit</button>
       <button onclick="confirmDelete('${loc.id}')" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid #f09595;background:#fcebeb;color:#a32d2d;cursor:pointer;">Delete</button>
-    </div>`:''}
+    </div>`:loc.lat&&loc.lng?`<div style="margin-top:8px;"><a href="https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}" target="_blank" style="font-size:12px;padding:4px 10px;border-radius:6px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;text-decoration:none;font-weight:600;">🧭 Directions</a></div>`:''}
   </div>`;
 }
 
@@ -522,12 +542,18 @@ function renderCards() {
   if(!filtered.length){el.innerHTML=`<div class="empty">No locations yet.<br/>Tap <strong>+ Add</strong> to be the first!<br/><span style="font-size:12px;">Locations are shared with your group in real time.</span></div>`;return;}
   el.innerHTML=filtered.map(loc=>{
     const canEdit=isAdmin||loc.createdBy===currentUser;
+    const tags=loc.tags||[];
+    const statusClass = loc.status==='open'?'status-open':loc.status==='closed'?'status-closed':'status-unknown';
+    const statusLabel = loc.status==='open'?'✅ Open':loc.status==='closed'?'🔴 Closed':'❓ Unknown';
+    const directionsUrl = loc.lat&&loc.lng?`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`:'';
     return `<div class="card ${highlightedId===loc.id?'highlighted':''}" id="card-${loc.id}" onclick="focusLocation('${loc.id}')">
       <div class="card-top">
-        <div>
+        <div style="flex:1;min-width:0;">
           <div class="card-name">${esc(loc.name)}</div>
           ${loc.address?`<div class="card-address">${esc(loc.address)}</div>`:''}
           ${loc.lat&&loc.lng?`<div class="card-coords">📍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>`:`<div class="card-coords" style="color:#d97706;">⚠ No pin</div>`}
+          <span class="status-badge ${statusClass}">${statusLabel}</span>
+          ${tags.length?`<div class="tags-wrap">${tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>`:''}
           ${loc.notes?`<div class="card-notes">"${esc(loc.notes)}"</div>`:''}
           <div class="card-author">Added by ${esc(loc.createdBy||'unknown')}</div>
         </div>
@@ -542,6 +568,7 @@ function renderCards() {
           <div class="last-updated">Updated ${fmtDate(loc.updatedAt)}</div>
         </div>
         <div class="card-actions">
+          ${directionsUrl?`<a class="directions-btn" href="${directionsUrl}" target="_blank" onclick="event.stopPropagation()">🧭 Directions</a>`:''}
           ${canEdit?`<button class="action-btn" onclick="event.stopPropagation();openEditById('${loc.id}')">Edit</button>`:''}
           ${canEdit?`<button class="action-btn danger" onclick="event.stopPropagation();confirmDelete('${loc.id}')">Delete</button>`:''}
         </div>
@@ -567,8 +594,8 @@ function confirmDelete(id) {
 }
 
 // ---- Add/Edit modal ----
-function openAdd(){editingId=null;form={name:'',address:'',type:'bathroom',rating:0,notes:'',lat:null,lng:null};showModal();}
-function openEditById(id){const loc=locations.find(l=>l.id===id);if(!loc)return;editingId=id;form={name:loc.name,address:loc.address||'',type:loc.type,rating:loc.rating,notes:loc.notes||'',lat:loc.lat||null,lng:loc.lng||null};showModal();}
+function openAdd(){editingId=null;form={name:'',address:'',type:'bathroom',status:'unknown',tags:[],rating:0,notes:'',lat:null,lng:null};showModal();}
+function openEditById(id){const loc=locations.find(l=>l.id===id);if(!loc)return;editingId=id;form={name:loc.name,address:loc.address||'',type:loc.type,status:loc.status||'unknown',tags:loc.tags||[],rating:loc.rating,notes:loc.notes||'',lat:loc.lat||null,lng:loc.lng||null};showModal();}
 function showModal() {
   document.getElementById('modal-root').innerHTML=`
     <div class="modal-overlay" id="modal-overlay">
@@ -576,6 +603,17 @@ function showModal() {
         <h2>${editingId?'Edit location':'Add location'}</h2>
         <div class="form-group"><label>Name *</label><input type="text" id="f-name" value="${esc(form.name)}" placeholder="e.g. City Park Restroom"/></div>
         <div class="form-group"><label>Type</label><select id="f-type"><option value="bathroom" ${form.type==='bathroom'?'selected':''}>Bathroom</option><option value="porta-potty" ${form.type==='porta-potty'?'selected':''}>Porta-potty</option></select></div>
+        <div class="form-group"><label>Status</label><select id="f-status">
+          <option value="unknown" ${form.status==='unknown'?'selected':''}>❓ Unknown</option>
+          <option value="open" ${form.status==='open'?'selected':''}>✅ Open</option>
+          <option value="closed" ${form.status==='closed'?'selected':''}>🔴 Closed / Out of service</option>
+        </select></div>
+        <div class="form-group"><label>Tags</label>
+          <div class="tag-checks">
+            ${['🔑 Requires key','♿ Handicap accessible','👨‍👩‍👧 Family friendly','🚿 Has shower','🧴 Has soap','🧻 Has paper','💰 Paid access','🏗 Construction site'].map(t=>`
+              <label class="tag-check"><input type="checkbox" value="${t}" ${(form.tags||[]).includes(t)?'checked':''}/>${t}</label>`).join('')}
+          </div>
+        </div>
         <div class="form-group"><label>Search address</label>
           <div class="search-wrap" id="form-search-wrap">
             <input type="text" id="f-address-search" value="${esc(form.address)}" placeholder="Type address to search and pin..." oninput="onFormSearchInput(this.value)" autocomplete="off"/>
@@ -656,7 +694,18 @@ function closeModal(){if(pinMap){pinMap.remove();pinMap=null;pinMarker=null;}doc
 async function saveEntry() {
   const name=document.getElementById('f-name').value.trim();
   if(!name){alert('Please enter a name.');return;}
-  const data={name,address:(document.getElementById('f-address-search')||{value:''}).value.trim(),type:document.getElementById('f-type').value,notes:document.getElementById('f-notes').value.trim(),rating:form.rating,lat:form.lat||null,lng:form.lng||null};
+  const tags=[...document.querySelectorAll('.tag-check input:checked')].map(cb=>cb.value);
+  const data={
+    name,
+    address:(document.getElementById('f-address-search')||{value:''}).value.trim(),
+    type:document.getElementById('f-type').value,
+    status:document.getElementById('f-status').value,
+    tags,
+    notes:document.getElementById('f-notes').value.trim(),
+    rating:form.rating,
+    lat:form.lat||null,
+    lng:form.lng||null
+  };
   closeModal();
   if(editingId) await updateLocation(editingId,data);
   else await addLocation(data);
