@@ -545,13 +545,14 @@ function renderCards() {
     const tags=loc.tags||[];
     const statusClass = loc.status==='open'?'status-open':loc.status==='closed'?'status-closed':'status-unknown';
     const statusLabel = loc.status==='open'?'✅ Open':loc.status==='closed'?'🔴 Closed':'❓ Unknown';
-    const directionsUrl = loc.lat&&loc.lng?`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`:'';
+    const hasPin = loc.lat&&loc.lat!==0&&loc.lng&&loc.lng!==0;
+    const directionsUrl = hasPin?`https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}`:'';
     return `<div class="card ${highlightedId===loc.id?'highlighted':''}" id="card-${loc.id}" onclick="focusLocation('${loc.id}')">
       <div class="card-top">
         <div style="flex:1;min-width:0;">
           <div class="card-name">${esc(loc.name)}</div>
           ${loc.address?`<div class="card-address">${esc(loc.address)}</div>`:''}
-          ${loc.lat&&loc.lng?`<div class="card-coords">📍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>`:`<div class="card-coords" style="color:#d97706;">⚠ No pin</div>`}
+          ${hasPin?`<div class="card-coords">📍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>`:`<div class="card-coords" style="color:#d97706;">⚠ No pin</div>`}
           <span class="status-badge ${statusClass}">${statusLabel}</span>
           ${tags.length?`<div class="tags-wrap">${tags.map(t=>`<span class="tag">${esc(t)}</span>`).join('')}</div>`:''}
           ${loc.notes?`<div class="card-notes">"${esc(loc.notes)}"</div>`:''}
@@ -695,20 +696,22 @@ async function saveEntry() {
   const name=document.getElementById('f-name').value.trim();
   if(!name){alert('Please enter a name.');return;}
   const tags=[...document.querySelectorAll('.tag-check input:checked')].map(cb=>cb.value);
-  const data={
+  // Clean data — Firebase rejects empty arrays and null values
+  const raw={
     name,
-    address:(document.getElementById('f-address-search')||{value:''}).value.trim(),
+    address:(document.getElementById('f-address-search')||{value:''}).value.trim()||'',
     type:document.getElementById('f-type').value,
     status:document.getElementById('f-status').value,
-    tags,
-    notes:document.getElementById('f-notes').value.trim(),
-    rating:form.rating,
-    lat:form.lat||null,
-    lng:form.lng||null
+    notes:document.getElementById('f-notes').value.trim()||'',
+    rating:form.rating||0,
+    lat:form.lat||0,
+    lng:form.lng||0
   };
+  // Only add tags if some are selected — Firebase hates empty arrays
+  if(tags.length>0) raw.tags=tags;
   closeModal();
-  if(editingId) await updateLocation(editingId,data);
-  else await addLocation(data);
+  if(editingId) await updateLocation(editingId,raw);
+  else await addLocation(raw);
 }
 
 // ---- Geolocation ----
