@@ -102,7 +102,7 @@
   .form-group input, .form-group select, .form-group textarea { width: 100%; font-size: 14px; padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); outline: none; transition: border-color 0.15s; }
   .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #378ADD; }
   .form-group textarea { resize: vertical; min-height: 60px; }
-  .pin-map-wrap { border-radius: var(--radius); overflow: hidden; border: 0.5px solid var(--border2); margin-top: 4px; }
+  .pin-map-wrap { border-radius: var(--radius); overflow: hidden; border: 0.5px solid var(--border2); margin-top: 4px; position: relative; }
   #pin-map { height: 220px; width: 100%; }
   .pin-hint { font-size: 11px; color: var(--text3); margin-top: 4px; }
   .pin-coords { font-size: 12px; color: var(--text2); margin-top: 4px; padding: 5px 10px; background: var(--bg2); border-radius: var(--radius); }
@@ -584,8 +584,11 @@ function showModal() {
           <div class="pin-hint">Search to auto-pin, or tap the map below.</div>
         </div>
         <div class="form-group"><label>Pin on map</label>
-          <div class="pin-map-wrap"><div id="pin-map"></div></div>
-          <div class="pin-hint">Tap to place · drag to adjust</div>
+          <div class="pin-map-wrap" style="position:relative;">
+            <div id="pin-map"></div>
+          </div>
+          <button onclick="locateMeOnPinMap()" style="width:100%;margin-top:6px;background:#f0f9f5;border:1px solid #0F6E56;border-radius:8px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;color:#0F6E56;">📍 Zoom to My Location</button>
+          <div class="pin-hint">Tap "Zoom to My Location" to center the map on you, then tap the map to drop a pin. Drag to adjust.</div>
           <div class="pin-coords" id="pin-coords">${form.lat&&form.lng?`Pinned: ${form.lat.toFixed(5)}, ${form.lng.toFixed(5)}`:'No pin — tap the map above'}</div>
         </div>
         <div class="form-group"><label>Cleanliness rating</label>
@@ -620,6 +623,34 @@ function initPinMap() {
   },100);
 }
 function updatePinCoords(){const el=document.getElementById('pin-coords');if(el)el.textContent=form.lat&&form.lng?`Pinned: ${form.lat.toFixed(5)}, ${form.lng.toFixed(5)}`:'No pin — tap the map above';}
+
+function locateMeOnPinMap() {
+  if (!navigator.geolocation) { alert('Geolocation not supported on this device.'); return; }
+  const btn = event.target;
+  btn.textContent = '⏳ Locating...';
+  btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(pos => {
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    if (pinMap) {
+      pinMap.setView([lat, lng], 18);
+      // Auto-drop a pin at current location if none placed yet
+      if (!form.lat && !form.lng) {
+        form.lat = +lat.toFixed(6); form.lng = +lng.toFixed(6);
+        if (pinMarker) pinMap.removeLayer(pinMarker);
+        pinMarker = L.marker([form.lat, form.lng], {draggable:true}).addTo(pinMap);
+        pinMarker.on('dragend', e => { const p=e.target.getLatLng(); form.lat=+p.lat.toFixed(6); form.lng=+p.lng.toFixed(6); updatePinCoords(); });
+        updatePinCoords();
+      }
+    }
+    btn.textContent = '📍 Find Me';
+    btn.disabled = false;
+  }, err => {
+    btn.textContent = '📍 Find Me';
+    btn.disabled = false;
+    if (err.code === 1) alert('Location access denied. Please allow location access in your browser.');
+    else alert('Could not get your location. Try again.');
+  }, {enableHighAccuracy:true, timeout:10000});
+}
 function setFormRating(n){form.rating=n;document.querySelectorAll('.modal-star').forEach((s,i)=>s.classList.toggle('filled',i<n));const lbl=document.getElementById('rating-label');if(lbl)lbl.textContent=RATINGS[n];}
 function closeModal(){if(pinMap){pinMap.remove();pinMap=null;pinMarker=null;}document.getElementById('modal-root').innerHTML='';}
 async function saveEntry() {
