@@ -224,7 +224,6 @@
       </select>
     </div>
     <div class="cards-list" id="cards-list"></div>
-    <div id="debug-panel" style="display:none;margin:0 1.25rem 1rem;padding:10px 12px;background:#fef9c3;border:1px solid #fde68a;border-radius:8px;font-size:12px;line-height:1.7;color:#713f12;"></div>
     <div class="sidebar-footer">
       <span id="footer-user">Not signed in</span>
       <div class="footer-links">
@@ -411,24 +410,13 @@ function initFirebase() {
         if(val.tags&&!Array.isArray(val.tags)) val.tags=Object.values(val.tags);
         locations.push({id:child.key,...val});
       });
-      // DEBUG — show visible panel with what came back from Firebase
-      const debugEl = document.getElementById('debug-panel');
-      if(debugEl) {
-        debugEl.style.display='block';
-        debugEl.innerHTML = `<strong>Firebase returned ${locations.length} locations</strong><br/>` +
-          (locations.length > 0 ? locations.map(l=>`• ${l.name||'unnamed'} (${l.type||'no type'})`).join('<br/>') : 'No locations found');
-      }
-      try { renderAll(); } catch(e) {
-        console.error('Render error:',e);
-        if(debugEl) debugEl.innerHTML += `<br/><span style="color:red">Render error: ${e.message}</span>`;
-      }
+      try { renderAll(); } catch(e) { console.error('Render error:',e); }
       const c=locations.length;
       const el=document.getElementById('location-count');
       if(el) el.textContent=`${c} shared location${c!==1?'s':''} · live`;
     }, err=>{
       showToast('❌ Database error: '+err.message, 5000);
-      const debugEl = document.getElementById('debug-panel');
-      if(debugEl) { debugEl.style.display='block'; debugEl.innerHTML=`<span style="color:red">DB Error: ${err.message}</span>`; }
+
     });
   } catch(e) {
     console.error('Firebase error:',e);
