@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Restroom Tracker"/>
+<meta name="theme-color" content="#0F6E56"/>
+<link rel="manifest" href="manifest.json"/>
+<link rel="apple-touch-icon" href="icon-192.png"/>
+<title>Restroom Tracker</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f3; --bg3: #eeece8;
+    --text: #1a1a1a; --text2: #555; --text3: #888;
+    --border: rgba(0,0,0,0.12); --border2: rgba(0,0,0,0.22);
+    --radius: 8px; --radius-lg: 12px; --green: #0F6E56;
+    --amber: #FAC775; --amber-dark: #633806;
+    --teal: #9FE1CB; --teal-dark: #085041;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg2); color: var(--text); min-height: 100vh; }
+
+  /* Gate screens */
+  .gate { position: fixed; inset: 0; background: var(--green); display: flex; align-items: center; justify-content: center; z-index: 99999; }
+  .gate-box { background: #fff; border-radius: 20px; padding: 2rem 1.75rem; width: calc(100% - 2rem); max-width: 360px; text-align: center; box-shadow: 0 12px 48px rgba(0,0,0,0.25); }
+  .gate-icon { font-size: 48px; margin-bottom: 0.75rem; }
+  .gate-box h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .gate-box p { font-size: 14px; color: var(--text2); margin-bottom: 1.25rem; line-height: 1.5; }
+  .gate-input { width: 100%; font-size: 18px; padding: 12px 14px; border-radius: var(--radius); border: 1.5px solid var(--border2); text-align: center; letter-spacing: 3px; outline: none; margin-bottom: 10px; transition: border-color 0.15s; }
+  .gate-input:focus { border-color: var(--green); }
+  .gate-input.error { border-color: #e53e3e; animation: shake 0.3s; }
+  .gate-name-input { letter-spacing: 0; font-size: 16px; }
+  .gate-error { font-size: 13px; color: #e53e3e; margin-bottom: 10px; min-height: 18px; }
+  .gate-btn { width: 100%; font-size: 15px; padding: 12px; border-radius: var(--radius); border: none; background: var(--green); color: #fff; cursor: pointer; font-weight: 700; }
+  .gate-btn:hover { opacity: 0.88; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
+
+  /* Layout */
+  .layout { display: grid; grid-template-columns: 380px 1fr; min-height: 100vh; }
+  .sidebar { background: var(--bg); border-right: 0.5px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .sidebar-header { padding: 1.25rem 1.25rem 0; display: flex; align-items: flex-start; justify-content: space-between; }
+  .sidebar-header h1 { font-size: 20px; font-weight: 700; }
+  .sidebar-header p { font-size: 12px; color: var(--text2); margin-top: 3px; }
+  .online-dot { width: 9px; height: 9px; border-radius: 50%; background: #ccc; flex-shrink: 0; margin-top: 6px; transition: all 0.3s; }
+  .online-dot.connected { background: #38a169; box-shadow: 0 0 0 3px rgba(56,161,105,0.2); }
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; padding: 1rem 1.25rem; }
+  .stat { background: var(--bg2); border-radius: var(--radius); padding: 10px 12px; }
+  .stat-label { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
+  .stat-value { font-size: 20px; font-weight: 700; }
+  .controls { padding: 0 1.25rem 0.75rem; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid var(--border2); background: var(--bg); color: var(--text2); cursor: pointer; transition: all 0.15s; }
+  .filter-btn.active { background: var(--bg3); color: var(--text); font-weight: 600; }
+  .add-btn { margin-left: auto; font-size: 12px; padding: 6px 14px; border-radius: 20px; border: none; background: var(--green); color: #fff; cursor: pointer; font-weight: 600; }
+  .sort-bar { padding: 0 1.25rem 0.75rem; display: flex; align-items: center; gap: 8px; }
+  .sort-bar label { font-size: 12px; color: var(--text3); }
+  .sort-bar select { font-size: 12px; padding: 4px 8px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); }
+  .cards-list { flex: 1; overflow-y: auto; padding: 0 1.25rem 1.25rem; display: flex; flex-direction: column; gap: 8px; }
+  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius-lg); padding: 0.9rem 1rem; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s; }
+  .card:hover { border-color: var(--border2); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .card.highlighted { border-color: #378ADD; box-shadow: 0 0 0 2px rgba(55,138,221,0.15); }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .card-name { font-size: 14px; font-weight: 600; }
+  .card-address { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .card-notes { font-size: 12px; color: var(--text3); margin-top: 4px; font-style: italic; }
+  .card-coords { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .card-author { font-size: 10px; color: var(--text3); margin-top: 3px; }
+  .type-badge { font-size: 10px; padding: 3px 9px; border-radius: 12px; white-space: nowrap; font-weight: 600; flex-shrink: 0; }
+  .type-potty { background: var(--amber); color: var(--amber-dark); }
+  .type-bathroom { background: var(--teal); color: var(--teal-dark); }
+  .card-bottom { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 0.5px solid var(--border); }
+  .stars { display: flex; gap: 2px; align-items: center; }
+  .star { font-size: 16px; cursor: pointer; border: none; background: none; padding: 0; line-height: 1; color: #f5a623; transition: transform 0.1s; }
+  .star:hover { transform: scale(1.2); }
+  .rating-label { font-size: 11px; color: var(--text2); margin-left: 4px; }
+  .card-actions { display: flex; gap: 5px; }
+  .action-btn { font-size: 11px; padding: 3px 9px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--text2); cursor: pointer; transition: all 0.15s; }
+  .action-btn:hover { background: var(--bg2); }
+  .action-btn.danger:hover { color: #A32D2D; border-color: #F09595; background: #FCEBEB; }
+  .last-updated { font-size: 10px; color: var(--text3); margin-top: 4px; }
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--text3); font-size: 14px; line-height: 1.7; }
+
+  /* Map */
+  .map-panel { position: relative; }
+  #map { width: 100%; height: 100vh; position: sticky; top: 0; }
+  .map-hint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 999; background: rgba(255,255,255,0.95); border: 0.5px solid var(--border2); border-radius: 20px; padding: 6px 16px; font-size: 12px; color: var(--text2); pointer-events: none; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .locate-btn { position: absolute; bottom: 32px; right: 12px; z-index: 999; background: #fff; border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 6px; }
+  .locate-pulse { width: 14px; height: 14px; border-radius: 50%; background: #378ADD; border: 2px solid #fff; box-shadow: 0 0 0 3px rgba(55,138,221,0.3); display: inline-block; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+  .modal { background: var(--bg); border-radius: var(--radius-lg); padding: 1.5rem; width: 100%; max-width: 480px; margin: 1rem; max-height: 92vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+  .modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 1.25rem; }
+  .form-group { margin-bottom: 1rem; }
+  .form-group label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; font-weight: 500; }
+  .form-group input, .form-group select, .form-group textarea { width: 100%; font-size: 14px; padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); outline: none; transition: border-color 0.15s; }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: #378ADD; }
+  .form-group textarea { resize: vertical; min-height: 60px; }
+  .pin-map-wrap { border-radius: var(--radius); overflow: hidden; border: 0.5px solid var(--border2); margin-top: 4px; }
+  #pin-map { height: 220px; width: 100%; }
+  .pin-hint { font-size: 11px; color: var(--text3); margin-top: 4px; }
+  .pin-coords { font-size: 12px; color: var(--text2); margin-top: 4px; padding: 5px 10px; background: var(--bg2); border-radius: var(--radius); }
+  .modal-stars { display: flex; gap: 6px; margin-top: 4px; align-items: center; }
+  .modal-star { font-size: 28px; cursor: pointer; background: none; border: none; padding: 0; color: #ddd; transition: transform 0.1s, color 0.1s; }
+  .modal-star.filled { color: #f5a623; }
+  .modal-star:hover { transform: scale(1.15); }
+  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1.25rem; }
+  .btn-cancel { font-size: 14px; padding: 8px 16px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; }
+  .btn-save { font-size: 14px; padding: 8px 20px; border-radius: var(--radius); border: none; background: var(--green); color: #fff; cursor: pointer; font-weight: 600; }
+
+  /* Search */
+  .search-wrap { position: relative; }
+  .search-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius); z-index: 9999; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 16px rgba(0,0,0,0.12); margin-top: 2px; }
+  .search-result { padding: 9px 12px; font-size: 13px; cursor: pointer; border-bottom: 0.5px solid var(--border); }
+  .search-result:hover { background: var(--bg2); }
+  .result-name { font-weight: 600; font-size: 13px; }
+  .result-detail { font-size: 11px; color: var(--text3); margin-top: 1px; }
+  .search-status { padding: 10px 12px; font-size: 12px; color: var(--text3); text-align: center; }
+  .map-search-bar { padding: 0 1.25rem 0.75rem; }
+  .map-search-bar input { width: 100%; font-size: 13px; padding: 8px 10px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: var(--bg); color: var(--text); outline: none; }
+  .map-search-bar input:focus { border-color: #378ADD; }
+
+  /* Sidebar footer */
+  .sidebar-footer { padding: 0.75rem 1.25rem; border-top: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .sidebar-footer span { font-size: 11px; color: var(--text3); }
+  .footer-links { display: flex; gap: 12px; }
+  .footer-link { font-size: 11px; color: var(--text3); cursor: pointer; border: none; background: none; padding: 0; }
+  .footer-link:hover { color: var(--text2); text-decoration: underline; }
+
+  /* Info overlays */
+  .info-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; z-index: 99998; }
+  .info-box { background: var(--bg); border-radius: var(--radius-lg); padding: 1.75rem; max-width: 440px; width: calc(100% - 2rem); max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,0.2); }
+  .info-box h2 { font-size: 19px; font-weight: 700; margin-bottom: 0.5rem; }
+  .info-box p, .info-box ul { font-size: 13px; color: var(--text2); line-height: 1.65; margin-bottom: 0.75rem; }
+  .info-box ul { margin-left: 1.25rem; }
+  .info-section { margin-bottom: 1.1rem; }
+  .info-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .info-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1.25rem; }
+  .btn-accept { font-size: 14px; padding: 10px 20px; border-radius: var(--radius); border: none; background: var(--green); color: #fff; cursor: pointer; font-weight: 600; }
+  .btn-decline { font-size: 13px; padding: 10px 16px; border-radius: var(--radius); border: 0.5px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; }
+  .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 1rem 0; }
+  .about-card { background: var(--bg2); border-radius: var(--radius); padding: 10px 12px; }
+  .about-card .label { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
+  .about-card .value { font-size: 16px; font-weight: 700; }
+  .admin-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; background: #fef3c7; color: #92400e; font-weight: 700; margin-left: 6px; vertical-align: middle; }
+
+  /* Toast */
+  .sync-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; font-size: 13px; padding: 8px 18px; border-radius: 20px; z-index: 99997; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
+  .sync-toast.show { opacity: 1; }
+
+  /* Mobile */
+  @media (max-width: 700px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; height: 100vh; }
+    .sidebar.active { display: flex; }
+    .map-panel { display: none; height: 100vh; }
+    .map-panel.active { display: block; }
+    #map { height: 100vh; }
+    .bottom-nav { display: flex; }
+    .locate-btn { bottom: 72px; }
+    .map-hint { top: auto; bottom: 72px; left: 12px; transform: none; font-size: 11px; }
+    .modal { margin: 0; max-width: 100%; border-radius: var(--radius-lg) var(--radius-lg) 0 0; position: fixed; bottom: 0; left: 0; right: 0; max-height: 92vh; }
+    .modal-overlay { align-items: flex-end; }
+    .sync-toast { bottom: 70px; }
+  }
+  .bottom-nav { display: none; position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 0.5px solid var(--border2); z-index: 1000; height: 58px; }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; font-size: 10px; color: var(--text3); cursor: pointer; padding: 8px 0; transition: color 0.15s; }
+  .nav-btn.active { color: var(--green); }
+  .nav-btn svg { width: 22px; height: 22px; }
+  .nav-add { background: var(--green); color: #fff !important; border-radius: 50%; width: 48px; height: 48px; margin-top: -20px; box-shadow: 0 4px 12px rgba(15,110,86,0.4); font-size: 26px; padding: 0; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div>
+        <h1>🚻 Restroom Tracker</h1>
+        <p id="location-count">Connecting...</p>
+      </div>
+      <div class="online-dot" id="online-dot" title="Connection status"></div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="map-search-bar">
+      <div class="search-wrap" id="map-search-wrap">
+        <input type="text" id="map-search-input" placeholder="🔍 Search address on map..." oninput="onMapSearchInput(this.value)" autocomplete="off"/>
+        <div class="search-dropdown" id="map-search-dropdown" style="display:none;"></div>
+      </div>
+    </div>
+    <div class="controls" id="controls"></div>
+    <div class="sort-bar">
+      <label>Sort</label>
+      <select onchange="sortBy=this.value;renderCards();refreshMarkers()">
+        <option value="newest">Newest</option>
+        <option value="rating-high">Highest rated</option>
+        <option value="rating-low">Lowest rated</option>
+        <option value="name">Name A–Z</option>
+      </select>
+    </div>
+    <div class="cards-list" id="cards-list"></div>
+    <div class="sidebar-footer">
+      <span id="footer-user">Not signed in</span>
+      <div class="footer-links">
+        <button class="footer-link" onclick="showPrivacy()">Privacy</button>
+        <button class="footer-link" onclick="showAbout()">About</button>
+      </div>
+    </div>
+  </div>
+  <div class="map-panel" id="map-panel">
+    <div class="map-hint">Tap map when adding a location to drop a pin</div>
+    <button class="locate-btn" id="locate-btn" onclick="findMyLocation()">📍 My location</button>
+    <div id="map"></div>
+  </div>
+</div>
+
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="nav-btn active" id="nav-list" onclick="switchMobileTab('list')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>
+    List
+  </button>
+  <button class="nav-btn" id="nav-map" onclick="switchMobileTab('map')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+    Map
+  </button>
+  <button class="nav-btn nav-add" onclick="openAdd()">+</button>
+  <button class="nav-btn" onclick="findMyLocation()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+    Locate
+  </button>
+  <button class="nav-btn" onclick="showAbout()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    About
+  </button>
+</nav>
+
+<div id="modal-root"></div>
+<div class="sync-toast" id="sync-toast"></div>
+
+<script>
+// ============================================================
+// CONFIGURATION — Change these values before deploying
+// ============================================================
+const ACCESS_CODE = 'friends123';   // Code to enter the app
+const ADMIN_CODE  = 'admin999';     // Secret code for admin features
+
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyC8gkNaHutW3Ia9-MAMAn1DiaGr-AVtqQM",
+  authDomain:        "restroom-tracker-47fbf.firebaseapp.com",
+  databaseURL:       "https://restroom-tracker-47fbf-default-rtdb.firebaseio.com",
+  projectId:         "restroom-tracker-47fbf",
+  storageBucket:     "restroom-tracker-47fbf.firebasestorage.app",
+  messagingSenderId: "997310013278",
+  appId:             "1:997310013278:web:0c6dc32c996a5a7d39f9cf"
+};
+// ============================================================
+
+const CONSENT_KEY  = 'rt-consent-v1';
+const ACCESS_KEY   = 'rt-access-v1';
+const USERNAME_KEY = 'rt-username-v1';
+const RATINGS = ['','Terrible','Poor','Okay','Good','Spotless'];
+
+let locations = [], db = null;
+let filter = 'all', sortBy = 'newest';
+let isAdmin = false, currentUser = '', highlightedId = null;
+let map, markers = {}, pinMap, pinMarker;
+let form = {}, editingId = null;
+
+// ---- Utilities ----
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtDate(ts) { if(!ts)return''; return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function avgRating() { const r=locations.filter(l=>l.rating>0); if(!r.length)return'—'; return (r.reduce((s,l)=>s+l.rating,0)/r.length).toFixed(1); }
+function getFiltered() {
+  let list=[...locations];
+  if(filter!=='all') list=list.filter(l=>l.type===filter);
+  if(sortBy==='rating-high') list.sort((a,b)=>b.rating-a.rating);
+  else if(sortBy==='rating-low') list.sort((a,b)=>a.rating-b.rating);
+  else if(sortBy==='name') list.sort((a,b)=>a.name.localeCompare(b.name));
+  else list.sort((a,b)=>b.createdAt-a.createdAt);
+  return list;
+}
+function showToast(msg, ms=2500) {
+  const t=document.getElementById('sync-toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),ms);
+}
+
+// ---- Step 1: Access code ----
+function checkAccess() {
+  if(localStorage.getItem(ACCESS_KEY)==='granted'){checkConsent();return;}
+  const el=document.createElement('div'); el.className='gate'; el.id='access-gate';
+  el.innerHTML=`<div class="gate-box">
+    <div class="gate-icon">🔐</div>
+    <h2>Restroom Tracker</h2>
+    <p>Enter the group access code to continue.</p>
+    <input class="gate-input" id="access-input" type="password" placeholder="••••••••" autocomplete="off" onkeydown="if(event.key==='Enter')submitAccess()"/>
+    <div class="gate-error" id="access-error"></div>
+    <button class="gate-btn" onclick="submitAccess()">Enter</button>
+  </div>`;
+  document.body.appendChild(el);
+  setTimeout(()=>document.getElementById('access-input')?.focus(),100);
+}
+function submitAccess() {
+  const val=document.getElementById('access-input').value.trim();
+  if(val===ACCESS_CODE){
+    localStorage.setItem(ACCESS_KEY,'granted');
+    document.getElementById('access-gate').remove();
+    checkConsent();
+  } else {
+    const inp=document.getElementById('access-input');
+    inp.classList.add('error'); document.getElementById('access-error').textContent='Incorrect code. Try again.';
+    inp.value='';
+    setTimeout(()=>{inp.classList.remove('error');document.getElementById('access-error').textContent='';},1500);
+  }
+}
+
+// ---- Step 2: Privacy consent ----
+function checkConsent() {
+  if(localStorage.getItem(CONSENT_KEY)==='granted'){checkUsername();return;}
+  const el=document.createElement('div'); el.className='info-overlay'; el.id='consent-overlay';
+  el.innerHTML=`<div class="info-box">
+    <h2>🚻 Welcome to Restroom Tracker</h2>
+    <p>Before you start, here's how this app uses your data:</p>
+    <ul>
+      <li><strong>Your entries</strong> are saved to a shared group database visible to all group members.</li>
+      <li><strong>Your display name</strong> is attached to entries you add.</li>
+      <li><strong>Your GPS location</strong> only shows your position on the map — never stored.</li>
+      <li><strong>Address searches</strong> go to OpenStreetMap's geocoding service.</li>
+      <li><strong>No ads, no tracking, no selling of data.</strong></li>
+    </ul>
+    <p style="font-size:12px;color:var(--text3);">Tap Accept to continue. Review anytime via the Privacy link.</p>
+    <div class="info-actions">
+      <button class="btn-decline" onclick="declineConsent()">Decline</button>
+      <button class="btn-accept" onclick="acceptConsent()">Accept &amp; Continue</button>
+    </div>
+  </div>`;
+  document.body.appendChild(el);
+}
+function acceptConsent() { localStorage.setItem(CONSENT_KEY,'granted'); document.getElementById('consent-overlay')?.remove(); checkUsername(); }
+function declineConsent() {
+  document.body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;font-family:sans-serif;color:#555;padding:2rem;text-align:center;">
+    <div style="font-size:48px;">🚫</div><h2 style="color:#1a1a1a;">Access Declined</h2>
+    <p style="font-size:14px;max-width:320px;line-height:1.6;">You declined the terms. No data has been collected. Close this tab to exit.</p>
+    <button onclick="location.reload()" style="font-size:14px;padding:10px 20px;border-radius:8px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;">Review Again</button>
+  </div>`;
+}
+
+// ---- Step 3: Username ----
+function checkUsername() {
+  const saved=localStorage.getItem(USERNAME_KEY);
+  if(saved){currentUser=saved;document.getElementById('footer-user').textContent=`👤 ${currentUser}`;initFirebase();return;}
+  const el=document.createElement('div'); el.className='gate'; el.id='username-gate';
+  el.innerHTML=`<div class="gate-box">
+    <div class="gate-icon">👤</div>
+    <h2>What's your name?</h2>
+    <p>Your name will show on locations you add so your friends know who pinned them.</p>
+    <input class="gate-input gate-name-input" id="username-input" type="text" placeholder="Your name" maxlength="20" autocomplete="off" onkeydown="if(event.key==='Enter')submitUsername()"/>
+    <div class="gate-error" id="username-error"></div>
+    <button class="gate-btn" onclick="submitUsername()">Let's go!</button>
+  </div>`;
+  document.body.appendChild(el);
+  setTimeout(()=>document.getElementById('username-input')?.focus(),100);
+}
+function submitUsername() {
+  const val=document.getElementById('username-input').value.trim();
+  if(!val){document.getElementById('username-error').textContent='Please enter your name.';return;}
+  currentUser=val; localStorage.setItem(USERNAME_KEY,val);
+  document.getElementById('footer-user').textContent=`👤 ${val}`;
+  document.getElementById('username-gate').remove();
+  initFirebase();
+}
+
+// ---- Firebase ----
+function initFirebase() {
+  try {
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db=firebase.database();
+    db.ref('.info/connected').on('value',snap=>{
+      document.getElementById('online-dot')?.classList.toggle('connected',snap.val()===true);
+    });
+    db.ref('locations').on('value',snap=>{
+      locations=[];
+      snap.forEach(child=>locations.push({id:child.key,...child.val()}));
+      renderAll();
+      const c=locations.length;
+      const el=document.getElementById('location-count');
+      if(el) el.textContent=`${c} shared location${c!==1?'s':''} · live`;
+    });
+  } catch(e) {
+    console.error('Firebase error:',e);
+    showToast('⚠️ Firebase not configured — see setup instructions',5000);
+    document.getElementById('location-count').textContent='Not connected';
+  }
+}
+
+// ---- Firebase data ops ----
+async function addLocation(data) {
+  if(!db)return;
+  const ref=db.ref('locations').push();
+  await ref.set({...data,id:ref.key,createdBy:currentUser,createdAt:Date.now(),updatedAt:Date.now()});
+  showToast('📍 Location added for everyone!');
+}
+async function updateLocation(id,data) {
+  if(!db)return;
+  await db.ref('locations/'+id).update({...data,updatedAt:Date.now()});
+  showToast('✅ Updated!');
+}
+async function deleteLocation(id) {
+  if(!db)return;
+  await db.ref('locations/'+id).remove();
+  showToast('🗑 Deleted');
+}
+async function adminClearAll() {
+  if(!db)return;
+  await db.ref('locations').remove();
+  showToast('🗑 All locations cleared');
+}
+
+// ---- Map icons ----
+function makeIcon(type,rating) {
+  const stars=rating>0?'★'.repeat(rating):'';
+  const pottysvg=`<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+    <filter id="ps"><feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="rgba(0,0,0,0.35)"/></filter>
+    <g filter="url(#ps)">
+      <rect x="4" y="3" width="28" height="34" rx="3" fill="#4a7fc1" stroke="#2a5298" stroke-width="1.5"/>
+      <rect x="4" y="3" width="28" height="5" rx="3" fill="#2a5298"/>
+      <rect x="4" y="6" width="28" height="2" fill="#2a5298"/>
+      <rect x="9" y="11" width="18" height="22" rx="2" fill="#3a6ab0" stroke="#2a5298" stroke-width="1"/>
+      <rect x="11" y="13" width="14" height="18" rx="1.5" fill="none" stroke="#5a8fd0" stroke-width="0.75" opacity="0.6"/>
+      <rect x="10" y="8" width="7" height="5" rx="1" fill="#a8c8f0" stroke="#2a5298" stroke-width="0.75"/>
+      <line x1="13.5" y1="8" x2="13.5" y2="13" stroke="#7aaae0" stroke-width="0.5"/>
+      <line x1="10" y1="10.5" x2="17" y2="10.5" stroke="#7aaae0" stroke-width="0.5"/>
+      <rect x="24" y="20" width="2.5" height="5" rx="1.2" fill="#a8c8f0" stroke="#2a5298" stroke-width="0.75"/>
+    </g>
+    ${stars?`<text x="18" y="43" text-anchor="middle" font-size="9" fill="#f5a623" font-family="sans-serif">${stars}</text>`:''}
+  </svg>`;
+  const bathroomSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="36" height="44" viewBox="0 0 36 44">
+    <filter id="bs"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.3)"/></filter>
+    <g filter="url(#bs)">
+      <rect x="3" y="2" width="30" height="36" rx="3" fill="#0F6E56" stroke="#fff" stroke-width="1.5"/>
+      <rect x="3" y="2" width="30" height="6" rx="3" fill="#085041"/>
+      <rect x="3" y="6" width="30" height="2" fill="#085041"/>
+      <circle cx="12" cy="16" r="3" fill="#fff" opacity="0.9"/>
+      <path d="M7 28 Q12 20 17 28Z" fill="#fff" opacity="0.9"/>
+      <circle cx="24" cy="16" r="3" fill="#fff" opacity="0.9"/>
+      <path d="M19 28 Q24 20 29 28Z" fill="#fff" opacity="0.9"/>
+      <line x1="18" y1="8" x2="18" y2="36" stroke="#fff" stroke-width="0.75" opacity="0.3"/>
+    </g>
+    ${stars?`<text x="18" y="43" text-anchor="middle" font-size="9" fill="#f5a623" font-family="sans-serif">${stars}</text>`:''}
+  </svg>`;
+  const svg=type==='porta-potty'?pottysvg:bathroomSvg;
+  const h=stars?44:38;
+  return L.divIcon({className:'',html:svg,iconSize:[36,h],iconAnchor:[18,h-6],popupAnchor:[0,-(h-4)]});
+}
+
+// ---- Map init ----
+function initMap() {
+  map=L.map('map').setView([39.8,-86.1],11);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+    attribution:'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics',maxZoom:19
+  }).addTo(map);
+}
+function refreshMarkers() {
+  Object.values(markers).forEach(m=>map.removeLayer(m)); markers={};
+  const wc=locations.filter(l=>l.lat&&l.lng);
+  wc.forEach(loc=>{
+    const m=L.marker([loc.lat,loc.lng],{icon:makeIcon(loc.type,loc.rating)}).addTo(map);
+    m.bindPopup(makePopup(loc));
+    m.on('click',()=>{highlightedId=loc.id;renderCards();});
+    markers[loc.id]=m;
+  });
+  if(wc.length>1){try{map.fitBounds(L.featureGroup(Object.values(markers)).getBounds().pad(0.2));}catch{}}
+  else if(wc.length===1) map.setView([wc[0].lat,wc[0].lng],15);
+}
+function makePopup(loc) {
+  const canEdit=isAdmin||loc.createdBy===currentUser;
+  return `<div style="min-width:175px;font-family:-apple-system,sans-serif;line-height:1.5;">
+    <strong style="font-size:14px;">${esc(loc.name)}</strong><br/>
+    <span style="font-size:12px;color:#666;">${loc.type==='porta-potty'?'Porta-potty':'Bathroom'}</span><br/>
+    ${loc.rating>0?`<span style="color:#f5a623;">${'★'.repeat(loc.rating)}${'☆'.repeat(5-loc.rating)}</span> <span style="font-size:12px;">${RATINGS[loc.rating]}</span><br/>`:''}
+    ${loc.address?`<span style="font-size:12px;color:#555;">${esc(loc.address)}</span><br/>`:''}
+    ${loc.notes?`<em style="font-size:12px;color:#888;">${esc(loc.notes)}</em><br/>`:''}
+    <span style="font-size:11px;color:#aaa;">Added by ${esc(loc.createdBy||'unknown')}</span>
+    ${canEdit?`<div style="margin-top:8px;display:flex;gap:6px;">
+      <button onclick="openEditById('${loc.id}')" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid #ddd;background:#f5f5f5;cursor:pointer;">Edit</button>
+      <button onclick="confirmDelete('${loc.id}')" style="font-size:12px;padding:4px 12px;border-radius:6px;border:1px solid #f09595;background:#fcebeb;color:#a32d2d;cursor:pointer;">Delete</button>
+    </div>`:''}
+  </div>`;
+}
+
+// ---- Render ----
+function renderAll() { renderStats(); renderControls(); renderCards(); refreshMarkers(); }
+function renderStats() {
+  const potty=locations.filter(l=>l.type==='porta-potty').length;
+  const bath=locations.filter(l=>l.type==='bathroom').length;
+  const pinned=locations.filter(l=>l.lat&&l.lng).length;
+  document.getElementById('stats').innerHTML=`
+    <div class="stat"><div class="stat-label">Total</div><div class="stat-value">${locations.length}</div></div>
+    <div class="stat"><div class="stat-label">Avg rating</div><div class="stat-value">${avgRating()}</div></div>
+    <div class="stat"><div class="stat-label">Pinned</div><div class="stat-value">${pinned}</div></div>`;
+}
+function renderControls() {
+  const potty=locations.filter(l=>l.type==='porta-potty').length;
+  const bath=locations.filter(l=>l.type==='bathroom').length;
+  document.getElementById('controls').innerHTML=`
+    <button class="filter-btn ${filter==='all'?'active':''}" onclick="setFilter('all')">All (${locations.length})</button>
+    <button class="filter-btn ${filter==='bathroom'?'active':''}" onclick="setFilter('bathroom')">Bathrooms (${bath})</button>
+    <button class="filter-btn ${filter==='porta-potty'?'active':''}" onclick="setFilter('porta-potty')">Porta-potties (${potty})</button>
+    <button class="add-btn" onclick="openAdd()">+ Add</button>`;
+}
+function renderCards() {
+  const filtered=getFiltered();
+  const el=document.getElementById('cards-list');
+  if(!filtered.length){el.innerHTML=`<div class="empty">No locations yet.<br/>Tap <strong>+ Add</strong> to be the first!<br/><span style="font-size:12px;">Locations are shared with your group in real time.</span></div>`;return;}
+  el.innerHTML=filtered.map(loc=>{
+    const canEdit=isAdmin||loc.createdBy===currentUser;
+    return `<div class="card ${highlightedId===loc.id?'highlighted':''}" id="card-${loc.id}" onclick="focusLocation('${loc.id}')">
+      <div class="card-top">
+        <div>
+          <div class="card-name">${esc(loc.name)}</div>
+          ${loc.address?`<div class="card-address">${esc(loc.address)}</div>`:''}
+          ${loc.lat&&loc.lng?`<div class="card-coords">📍 ${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)}</div>`:`<div class="card-coords" style="color:#d97706;">⚠ No pin</div>`}
+          ${loc.notes?`<div class="card-notes">"${esc(loc.notes)}"</div>`:''}
+          <div class="card-author">Added by ${esc(loc.createdBy||'unknown')}</div>
+        </div>
+        <span class="type-badge ${loc.type==='porta-potty'?'type-potty':'type-bathroom'}">${loc.type==='porta-potty'?'Porta-potty':'Bathroom'}</span>
+      </div>
+      <div class="card-bottom">
+        <div>
+          <div class="stars">
+            ${[1,2,3,4,5].map(n=>`<button class="star" onclick="event.stopPropagation();quickRate('${loc.id}',${n})">${n<=loc.rating?'★':'☆'}</button>`).join('')}
+            <span class="rating-label">${loc.rating>0?RATINGS[loc.rating]:'Not rated'}</span>
+          </div>
+          <div class="last-updated">Updated ${fmtDate(loc.updatedAt)}</div>
+        </div>
+        <div class="card-actions">
+          ${canEdit?`<button class="action-btn" onclick="event.stopPropagation();openEditById('${loc.id}')">Edit</button>`:''}
+          ${canEdit?`<button class="action-btn danger" onclick="event.stopPropagation();confirmDelete('${loc.id}')">Delete</button>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ---- Interactions ----
+function setFilter(f){filter=f;renderCards();renderControls();}
+function focusLocation(id) {
+  highlightedId=id; renderCards();
+  const loc=locations.find(l=>l.id===id);
+  if(loc&&loc.lat&&loc.lng&&markers[id]){map.setView([loc.lat,loc.lng],17);markers[id].openPopup();}
+  document.getElementById(`card-${id}`)?.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function quickRate(id,rating){await updateLocation(id,{rating});}
+function confirmDelete(id) {
+  const loc=locations.find(l=>l.id===id); if(!loc)return;
+  if(!confirm(`Delete "${loc.name}"? This removes it for everyone.`))return;
+  deleteLocation(id);
+  document.getElementById('modal-root').innerHTML='';
+}
+
+// ---- Add/Edit modal ----
+function openAdd(){editingId=null;form={name:'',address:'',type:'bathroom',rating:0,notes:'',lat:null,lng:null};showModal();}
+function openEditById(id){const loc=locations.find(l=>l.id===id);if(!loc)return;editingId=id;form={name:loc.name,address:loc.address||'',type:loc.type,rating:loc.rating,notes:loc.notes||'',lat:loc.lat||null,lng:loc.lng||null};showModal();}
+function showModal() {
+  document.getElementById('modal-root').innerHTML=`
+    <div class="modal-overlay" id="modal-overlay">
+      <div class="modal">
+        <h2>${editingId?'Edit location':'Add location'}</h2>
+        <div class="form-group"><label>Name *</label><input type="text" id="f-name" value="${esc(form.name)}" placeholder="e.g. City Park Restroom"/></div>
+        <div class="form-group"><label>Type</label><select id="f-type"><option value="bathroom" ${form.type==='bathroom'?'selected':''}>Bathroom</option><option value="porta-potty" ${form.type==='porta-potty'?'selected':''}>Porta-potty</option></select></div>
+        <div class="form-group"><label>Search address</label>
+          <div class="search-wrap" id="form-search-wrap">
+            <input type="text" id="f-address-search" value="${esc(form.address)}" placeholder="Type address to search and pin..." oninput="onFormSearchInput(this.value)" autocomplete="off"/>
+            <div class="search-dropdown" id="form-search-dropdown" style="display:none;"></div>
+          </div>
+          <div class="pin-hint">Search to auto-pin, or tap the map below.</div>
+        </div>
+        <div class="form-group"><label>Pin on map</label>
+          <div class="pin-map-wrap"><div id="pin-map"></div></div>
+          <div class="pin-hint">Tap to place · drag to adjust</div>
+          <div class="pin-coords" id="pin-coords">${form.lat&&form.lng?`Pinned: ${form.lat.toFixed(5)}, ${form.lng.toFixed(5)}`:'No pin — tap the map above'}</div>
+        </div>
+        <div class="form-group"><label>Cleanliness rating</label>
+          <div class="modal-stars" id="modal-stars">
+            ${[1,2,3,4,5].map(n=>`<button class="modal-star ${n<=form.rating?'filled':''}" onclick="setFormRating(${n})">★</button>`).join('')}
+            <span id="rating-label" style="font-size:13px;color:#888;margin-left:4px;">${form.rating>0?RATINGS[form.rating]:'Tap to rate'}</span>
+          </div>
+        </div>
+        <div class="form-group"><label>Notes</label><textarea id="f-notes" placeholder="Any comments...">${esc(form.notes)}</textarea></div>
+        <div class="modal-footer">
+          <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+          <button class="btn-save" onclick="saveEntry()">Save location</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('modal-overlay').addEventListener('click',e=>{if(e.target.id==='modal-overlay')closeModal();});
+  initPinMap();
+}
+function initPinMap() {
+  setTimeout(()=>{
+    const el=document.getElementById('pin-map'); if(!el||pinMap)return;
+    pinMap=L.map('pin-map').setView(form.lat?[form.lat,form.lng]:[39.8,-86.1],form.lat?15:11);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles &copy; Esri',maxZoom:19}).addTo(pinMap);
+    if(form.lat&&form.lng){pinMarker=L.marker([form.lat,form.lng],{draggable:true}).addTo(pinMap);pinMarker.on('dragend',e=>{const p=e.target.getLatLng();form.lat=+p.lat.toFixed(6);form.lng=+p.lng.toFixed(6);updatePinCoords();});}
+    pinMap.on('click',e=>{
+      form.lat=+e.latlng.lat.toFixed(6);form.lng=+e.latlng.lng.toFixed(6);
+      if(pinMarker)pinMap.removeLayer(pinMarker);
+      pinMarker=L.marker([form.lat,form.lng],{draggable:true}).addTo(pinMap);
+      pinMarker.on('dragend',ev=>{const p=ev.target.getLatLng();form.lat=+p.lat.toFixed(6);form.lng=+p.lng.toFixed(6);updatePinCoords();});
+      updatePinCoords();
+    });
+  },100);
+}
+function updatePinCoords(){const el=document.getElementById('pin-coords');if(el)el.textContent=form.lat&&form.lng?`Pinned: ${form.lat.toFixed(5)}, ${form.lng.toFixed(5)}`:'No pin — tap the map above';}
+function setFormRating(n){form.rating=n;document.querySelectorAll('.modal-star').forEach((s,i)=>s.classList.toggle('filled',i<n));const lbl=document.getElementById('rating-label');if(lbl)lbl.textContent=RATINGS[n];}
+function closeModal(){if(pinMap){pinMap.remove();pinMap=null;pinMarker=null;}document.getElementById('modal-root').innerHTML='';}
+async function saveEntry() {
+  const name=document.getElementById('f-name').value.trim();
+  if(!name){alert('Please enter a name.');return;}
+  const data={name,address:(document.getElementById('f-address-search')||{value:''}).value.trim(),type:document.getElementById('f-type').value,notes:document.getElementById('f-notes').value.trim(),rating:form.rating,lat:form.lat||null,lng:form.lng||null};
+  closeModal();
+  if(editingId) await updateLocation(editingId,data);
+  else await addLocation(data);
+}
+
+// ---- Geolocation ----
+let locationMarker=null,locationCircle=null;
+function findMyLocation() {
+  const btn=document.getElementById('locate-btn');
+  if(!navigator.geolocation){alert('Geolocation not supported.');return;}
+  if(btn)btn.textContent='⏳ Locating...';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const{latitude:lat,longitude:lng,accuracy:acc}=pos.coords;
+    if(locationMarker){map.removeLayer(locationMarker);map.removeLayer(locationCircle);}
+    locationCircle=L.circle([lat,lng],{radius:acc,color:'#378ADD',fillColor:'#378ADD',fillOpacity:0.12,weight:1}).addTo(map);
+    locationMarker=L.marker([lat,lng],{icon:L.divIcon({className:'',html:`<div style="width:16px;height:16px;border-radius:50%;background:#378ADD;border:3px solid #fff;box-shadow:0 0 0 3px rgba(55,138,221,0.4);"></div>`,iconSize:[16,16],iconAnchor:[8,8]})}).addTo(map);
+    locationMarker.bindPopup('<strong>You are here</strong>').openPopup();
+    map.setView([lat,lng],17);
+    if(btn)btn.innerHTML='<span class="locate-pulse"></span> My location';
+  },err=>{
+    if(btn)btn.textContent='📍 My location';
+    if(err.code===1)alert('Location access denied. Please allow location in your browser settings.');
+    else alert('Could not get your location.');
+  },{enableHighAccuracy:true,timeout:10000});
+}
+
+// ---- Geocoding ----
+let formSearchTimer=null,mapSearchTimer=null;
+async function geocode(q){const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`,{headers:{'Accept-Language':'en'}});return r.json();}
+function onFormSearchInput(val){
+  clearTimeout(formSearchTimer);const dd=document.getElementById('form-search-dropdown');
+  if(!val||val.length<3){dd.style.display='none';return;}
+  dd.style.display='block';dd.innerHTML=`<div class="search-status">Searching...</div>`;
+  formSearchTimer=setTimeout(async()=>{try{const res=await geocode(val);if(!res.length){dd.innerHTML=`<div class="search-status">No results</div>`;return;}dd.innerHTML=res.map((r,i)=>`<div class="search-result" onclick="selectFormResult(${i})"><div class="result-name">${esc(r.name||r.display_name.split(',')[0])}</div><div class="result-detail">${esc(r.display_name)}</div></div>`).join('');dd._results=res;}catch{dd.innerHTML=`<div class="search-status">Search failed</div>`;}},400);
+}
+function selectFormResult(i){const dd=document.getElementById('form-search-dropdown');const r=dd._results[i];if(!r)return;form.lat=parseFloat(r.lat);form.lng=parseFloat(r.lon);form.address=r.display_name;document.getElementById('f-address-search').value=r.display_name;dd.style.display='none';updatePinCoords();if(pinMap){if(pinMarker)pinMap.removeLayer(pinMarker);pinMap.setView([form.lat,form.lng],17);pinMarker=L.marker([form.lat,form.lng],{draggable:true}).addTo(pinMap);pinMarker.on('dragend',e=>{const p=e.target.getLatLng();form.lat=+p.lat.toFixed(6);form.lng=+p.lng.toFixed(6);updatePinCoords();});}}
+function onMapSearchInput(val){
+  clearTimeout(mapSearchTimer);const dd=document.getElementById('map-search-dropdown');
+  if(!val||val.length<3){dd.style.display='none';return;}
+  dd.style.display='block';dd.innerHTML=`<div class="search-status">Searching...</div>`;
+  mapSearchTimer=setTimeout(async()=>{try{const res=await geocode(val);if(!res.length){dd.innerHTML=`<div class="search-status">No results</div>`;return;}dd.innerHTML=res.map((r,i)=>`<div class="search-result" onclick="selectMapResult(${i})"><div class="result-name">${esc(r.name||r.display_name.split(',')[0])}</div><div class="result-detail">${esc(r.display_name)}</div></div>`).join('');dd._results=res;}catch{dd.innerHTML=`<div class="search-status">Search failed</div>`;}},400);
+}
+function selectMapResult(i){const dd=document.getElementById('map-search-dropdown');const r=dd._results[i];if(!r)return;dd.style.display='none';document.getElementById('map-search-input').value=r.display_name;if(map)map.setView([parseFloat(r.lat),parseFloat(r.lon)],16);}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#map-search-wrap')){const d=document.getElementById('map-search-dropdown');if(d)d.style.display='none';}
+  if(!e.target.closest('#form-search-wrap')){const d=document.getElementById('form-search-dropdown');if(d)d.style.display='none';}
+});
+
+// ---- Privacy & About ----
+function showPrivacy(){
+  const o=document.createElement('div');o.className='info-overlay';
+  o.innerHTML=`<div class="info-box" style="max-width:460px;">
+    <h2>🔒 Privacy Policy</h2>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:1rem;">Last updated: ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
+    <div class="info-section"><h3>Shared database</h3><p>Location entries (name, address, type, rating, notes, coordinates, and your display name) are stored in a shared Firebase database visible to all group members with the access code.</p></div>
+    <div class="info-section"><h3>GPS / Location</h3><p>Used only to show your blue dot on the map. <strong>Never stored or shared with anyone.</strong></p></div>
+    <div class="info-section"><h3>Address search</h3><p>Uses <a href="https://nominatim.openstreetmap.org" target="_blank" style="color:var(--green);">OpenStreetMap Nominatim</a>. Search queries are sent to their servers. See their <a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" style="color:var(--green);">privacy policy</a>.</p></div>
+    <div class="info-section"><h3>Map tiles</h3><p>Satellite imagery from <a href="https://www.esri.com/en-us/privacy/overview" target="_blank" style="color:var(--green);">ESRI</a>. Tile requests include your approximate map viewport.</p></div>
+    <div class="info-section"><h3>No ads or tracking</h3><p>No analytics, no advertising, no third-party trackers of any kind.</p></div>
+    <div class="info-actions"><button class="btn-accept" onclick="this.closest('.info-overlay').remove()">Close</button></div>
+  </div>`;
+  document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)o.remove();});
+}
+
+function showAbout(){
+  const pinned=locations.filter(l=>l.lat&&l.lng).length;
+  const rated=locations.filter(l=>l.rating>0).length;
+  const o=document.createElement('div');o.className='info-overlay';
+  o.innerHTML=`<div class="info-box" style="max-width:420px;">
+    <h2>🚻 Restroom Tracker ${isAdmin?'<span class="admin-badge">ADMIN</span>':''}</h2>
+    <p>Track and rate local bathrooms and porta-potties, shared in real time with your group.</p>
+    <div class="about-grid">
+      <div class="about-card"><div class="label">Locations</div><div class="value">${locations.length}</div></div>
+      <div class="about-card"><div class="label">Pinned on map</div><div class="value">${pinned}</div></div>
+      <div class="about-card"><div class="label">Rated</div><div class="value">${rated}</div></div>
+      <div class="about-card"><div class="label">Avg rating</div><div class="value">${avgRating()}</div></div>
+    </div>
+    <div class="info-section"><h3>Signed in as</h3><p>👤 ${esc(currentUser)} ${isAdmin?'<span class="admin-badge">Admin</span>':''}</p></div>
+    ${!isAdmin?`<div class="info-section"><h3>Admin access</h3>
+      <p style="margin-bottom:6px;">Admins can edit or delete any location and clear all data.</p>
+      <div style="display:flex;gap:6px;">
+        <input type="password" id="admin-code-input" placeholder="Enter admin code" style="flex:1;font-size:13px;padding:7px 10px;border-radius:6px;border:1px solid #ddd;outline:none;"/>
+        <button onclick="tryAdminCode()" style="font-size:13px;padding:7px 14px;border-radius:6px;border:none;background:var(--green);color:#fff;cursor:pointer;font-weight:600;">Unlock</button>
+      </div>
+      <div id="admin-code-error" style="font-size:12px;color:#e53e3e;margin-top:4px;"></div>
+    </div>`:`
+    <div class="info-section" style="background:#fef3c7;border-radius:8px;padding:14px;">
+      <h3>⚠️ Admin Controls</h3>
+      <p style="margin-bottom:10px;">Clear all locations permanently for everyone in the group. This cannot be undone.</p>
+      <button onclick="confirmAdminClear()" style="font-size:13px;padding:8px 16px;border-radius:6px;border:1px solid #F09595;background:#FCEBEB;color:#A32D2D;cursor:pointer;font-weight:600;">🗑 Clear ALL locations</button>
+    </div>`}
+    <div class="info-section"><h3>Install on your phone</h3>
+    <p><strong>iPhone:</strong> Open in Safari → Share button → "Add to Home Screen"<br/><strong>Android:</strong> Open in Chrome → Menu → "Add to Home Screen"</p></div>
+    <div class="info-actions"><button class="btn-accept" onclick="this.closest('.info-overlay').remove()">Close</button></div>
+  </div>`;
+  document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)o.remove();});
+}
+
+function tryAdminCode(){
+  const val=document.getElementById('admin-code-input')?.value.trim();
+  if(val===ADMIN_CODE){isAdmin=true;document.querySelectorAll('.info-overlay').forEach(e=>e.remove());showToast('🔑 Admin access granted');showAbout();}
+  else{const el=document.getElementById('admin-code-error');if(el)el.textContent='Incorrect admin code.';}
+}
+function confirmAdminClear(){
+  if(!confirm('⚠️ Delete ALL locations for everyone? This cannot be undone.'))return;
+  if(!confirm('Last chance — are you sure?'))return;
+  document.querySelectorAll('.info-overlay').forEach(e=>e.remove());
+  adminClearAll();
+}
+
+// ---- Mobile ----
+function switchMobileTab(tab){
+  const sidebar=document.getElementById('sidebar');const mapPanel=document.getElementById('map-panel');
+  const navList=document.getElementById('nav-list');const navMap=document.getElementById('nav-map');
+  if(window.innerWidth<=700){
+    if(tab==='list'){sidebar.classList.add('active');mapPanel.classList.remove('active');navList.classList.add('active');navMap.classList.remove('active');}
+    else{mapPanel.classList.add('active');sidebar.classList.remove('active');navMap.classList.add('active');navList.classList.remove('active');setTimeout(()=>{if(map)map.invalidateSize();},100);}
+  }
+}
+function initMobileLayout(){if(window.innerWidth<=700)document.getElementById('sidebar').classList.add('active');}
+
+// ---- Service Worker ----
+if('serviceWorker'in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));}
+
+// ---- App Start ----
+initMap();
+initMobileLayout();
+checkAccess();
+</script>
+</body>
+</html>
