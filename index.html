@@ -462,7 +462,7 @@ function makeIcon(type,rating) {
 // ---- Map init ----
 function initMap() {
   map=L.map('map').setView([39.8,-86.1],11);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+  L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
     attribution:'Tiles &copy; Esri &mdash; Esri, Maxar, Earthstar Geographics',maxZoom:19
   }).addTo(map);
 }
@@ -606,7 +606,7 @@ function initPinMap() {
   setTimeout(()=>{
     const el=document.getElementById('pin-map'); if(!el||pinMap)return;
     pinMap=L.map('pin-map').setView(form.lat?[form.lat,form.lng]:[39.8,-86.1],form.lat?15:11);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles &copy; Esri',maxZoom:19}).addTo(pinMap);
+    L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{attribution:'Tiles &copy; Esri',maxZoom:19}).addTo(pinMap);
     if(form.lat&&form.lng){pinMarker=L.marker([form.lat,form.lng],{draggable:true}).addTo(pinMap);pinMarker.on('dragend',e=>{const p=e.target.getLatLng();form.lat=+p.lat.toFixed(6);form.lng=+p.lng.toFixed(6);updatePinCoords();});}
     pinMap.on('click',e=>{
       form.lat=+e.latlng.lat.toFixed(6);form.lng=+e.latlng.lng.toFixed(6);
